@@ -1,8 +1,8 @@
 # Grafo
 
-> Plataforma SaaS multi-tenant para EdTech, com motor de IA próprio: **GraphRAG** + uma camada de **orquestração multi-LLM** (6 provedores integrados, **34 módulos** roteáveis em runtime, com fallback automático), construída **sem frameworks**. Em produção num preparatório jurídico.
+> Plataforma SaaS multi-tenant para EdTech, com motor de IA próprio: **GraphRAG** + uma camada de **orquestração multi-LLM** (6 provedores integrados, **41 módulos** roteáveis em runtime, com fallback automático), construída **sem frameworks**. Em produção num preparatório jurídico.
 
-**Stack:** Node.js · Express · PostgreSQL + pgvector (HNSW) · Grafo de conhecimento · Orquestração multi-LLM (Anthropic · Google · Groq · DeepSeek · OpenAI · Ollama) · Docker · Nginx · VPS Linux
+**Stack:** Node.js · Express · PostgreSQL + pgvector (HNSW) · Grafo de conhecimento · Orquestração multi-LLM própria (Anthropic · Google · Groq · DeepSeek · OpenAI · Ollama) · Docker · Nginx · VPS Linux
 
 ---
 
@@ -23,7 +23,7 @@ flowchart TD
     A[Cliente SPA<br/>JavaScript + Tailwind] --> B[API Node.js / Express<br/>JWT · rate-limit · RBAC]
     B --> C[Motor GraphRAG<br/>busca vetorial + grafo]
     C --> D[Roteador multi-LLM<br/>34 módulos · config em runtime]
-    D --> D1[Anthropic · Google · Groq<br/>DeepSeek · OpenAI · Ollama local]
+    D --> D1[6 provedores integrados<br/>Claude + Google em operação]
     D --> D2[Circuit-breaker<br/>fallback automático]
     C --> E[(PostgreSQL<br/>129 tabelas · multi-tenant)]
     E --> F[pgvector<br/>embeddings 768-d · HNSW]
@@ -49,9 +49,9 @@ Optei por orquestração própria — só SDKs oficiais + Postgres. Zero camada 
 
 O motor não está acoplado a um modelo nem a um fornecedor. Há uma **camada de roteamento própria** que decide, por funcionalidade, qual provedor e modelo atende a requisição — e isso é **configuração em runtime, não código**. Um gestor troca o modelo de qualquer módulo pelo painel, em tempo real, **sem deploy**.
 
-- **6 provedores integrados** (Anthropic, Google, Groq, DeepSeek, OpenAI, Ollama-local) — **4 em roteamento ativo hoje** — mais um caminho de *billing* de custo fixo para cargas interativas (ver FinOps abaixo).
-- **34 módulos** configurados, cada um com provedor / modelo / temperatura / max-tokens próprios.
-- **Circuit-breaker**: cota estourada ou falha num provedor **comuta automaticamente** para um fallback equivalente (ex.: Google → Anthropic Haiku; Groq → Gemini Flash), sem intervenção. Há ainda um **modo local** (Ollama) que tenta primeiro e cai para a nuvem se indisponível.
+- **6 provedores integrados** via SDKs oficiais (Anthropic Claude · Google · Groq · DeepSeek · OpenAI · Ollama-local) — a arquitetura é plugável: adicionar ou trocar provedor é configuração, não código. Em **roteamento ativo hoje**: Anthropic Claude (todo o texto) + Google (embeddings + multimodal), sobre um caminho de *billing* de custo fixo para as cargas interativas (ver FinOps abaixo).
+- **41 módulos** configurados, cada um com provedor / modelo / temperatura / max-tokens próprios.
+- **Circuit-breaker**: cota estourada ou falha num provedor **comuta automaticamente** para um fallback equivalente, sem intervenção — inclusive um **modo local** (Ollama) que dispensa a nuvem.
 
 A lógica de atribuição segue o ponto ótimo de cada modelo:
 
@@ -60,10 +60,9 @@ A lógica de atribuição segue o ponto ótimo de cada modelo:
 | Embeddings (768-d) | Gemini | Custo baixo em altíssimo volume |
 | Geração didática longa (material, lei) | Claude Sonnet / Opus | Aderência à instrução, output longo sem truncar |
 | Parse e classificação em lote | Claude Haiku | Saída estruturada, barata e rápida |
-| Extração de JSON / fallback barato | Gemini Flash · Groq · DeepSeek | Throughput por centavo |
 | Multimodal (OCR de redação, leitura de cartão) | Gemini | Exige provedor com visão |
 
-Resultado: agnóstico de fornecedor, sem lock-in, resiliente a falha de provedor, com custo e qualidade afináveis por tarefa — tudo sem tocar no código.
+Resultado: agnóstico de fornecedor, sem lock-in, com custo e qualidade afináveis por tarefa — tudo sem tocar no código.
 
 ### FinOps: desacoplar a escolha de modelo da estrutura de billing
 
@@ -90,11 +89,11 @@ O índice HNSW dá a velocidade de busca aproximada; manter tudo no Postgres dei
 
 | Métrica | Valor |
 |---|---|
-| Acervo vetorizado | 15.607 trechos · 100% com embedding · 768-d · HNSW/cosseno |
-| Banco de questões | 1.318 questões ativas, pesquisáveis pela IA |
-| Schema | 129 tabelas · ~25 serviços de domínio |
-| Orquestração de IA | 6 provedores integrados (4 ativos) · 34 módulos configuráveis em runtime, sem deploy |
-| Grafo de conhecimento | Nós (lei/artigo/súmula/princípio) + arestas (fundamenta/revoga/aplica) extraídos na ingestão |
+| Acervo vetorizado | 17.735 trechos · 100% com embedding · 768-d · HNSW/cosseno |
+| Banco de questões | 5.426 questões, pesquisáveis pela IA |
+| Grafo de conhecimento | 22.520 nós · 23.377 arestas (lei/artigo/súmula/princípio + relações fundamenta/revoga/aplica) |
+| Schema | 160 tabelas · ~25 serviços de domínio |
+| Orquestração de IA | 6 provedores integrados (2 em roteamento ativo) · 41 módulos configuráveis em runtime, sem deploy |
 
 **GraphRAG, não só RAG:** na ingestão, cada chunk passa por extração de entidades e relações que populam um grafo jurídico paralelo aos vetores. Na consulta, o sistema encontra os vetores mais próximos, puxa os nós ligados e seus vizinhos de grau 1, e anexa esse mapa de relações ao prompt — dando ao modelo a estrutura normativa em torno do tema, não só trechos soltos.
 
